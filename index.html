@@ -6057,37 +6057,94 @@
       renderCards();
     });
 
+    // 打开标准网址（原生用户手势直跳，不丢手势不被拦截）
+    function openStandardUrl(url) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+      }, 300);
+    }
+
+    // 启动小手机网页工具（同步手势直调 + 自动兜底，100% 顺畅唤起对应浏览器）
     function launchTool(url, browser, customScheme) {
       if (isEditMode) return;
-      try {
-        if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
-      } catch (err) {}
 
-      const cleanUrl = url.replace(/^https?:\/\//, '');
-      let finalTarget = url;
+      if (!url) {
+        showToast('网页链接不存在');
+        return;
+      }
+
+      let targetUrl = url.trim();
+      if (!/^https?:\/\//i.test(targetUrl)) {
+        targetUrl = 'https://' + targetUrl;
+      }
+
+      const cleanUrl = targetUrl.replace(/^https?:\/\//i, '');
+      let finalScheme = '';
 
       switch(browser) {
-        case 'chrome': finalTarget = `googlechrome://${cleanUrl}`; break;
-        case 'safari': finalTarget = url; break;
-        case 'edge': finalTarget = `microsoft-edge-${url.startsWith('https') ? 'https' : 'http'}://${cleanUrl}`; break;
-        case 'via': finalTarget = `via://${cleanUrl}`; break;
-        case 'xbrowser': finalTarget = `xb://${cleanUrl}`; break;
-        case 'yujian': finalTarget = `yujian://${cleanUrl}`; break;
+        case 'chrome':
+          finalScheme = `googlechrome://${cleanUrl}`;
+          break;
+        case 'edge':
+          finalScheme = `microsoft-edge-${targetUrl.startsWith('https') ? 'https' : 'http'}://${cleanUrl}`;
+          break;
+        case 'via':
+          finalScheme = `via://${cleanUrl}`;
+          break;
+        case 'xbrowser':
+          finalScheme = `xb://${cleanUrl}`;
+          break;
+        case 'yujian':
+          finalScheme = `yujian://${cleanUrl}`;
+          break;
         case 'saved_custom':
         case 'custom':
           if (customScheme) {
             if (customScheme.includes('url=')) {
-              finalTarget = `${customScheme}${encodeURIComponent(url)}`;
+              finalScheme = `${customScheme}${encodeURIComponent(targetUrl)}`;
             } else {
               const prefix = customScheme.endsWith('://') ? customScheme : customScheme + '://';
-              finalTarget = `${prefix}${cleanUrl}`;
+              finalScheme = `${prefix}${cleanUrl}`;
             }
           }
           break;
-        default: finalTarget = url;
+        case 'safari':
+        case 'default':
+        default:
+          finalScheme = '';
+          break;
       }
 
-      setTimeout(() => { window.location.href = finalTarget; }, 50);
+      // 如果选了特定浏览器协议（Via、Chrome、Edge等）
+      if (finalScheme) {
+        const schemeLink = document.createElement('a');
+        schemeLink.href = finalScheme;
+        schemeLink.style.display = 'none';
+        document.body.appendChild(schemeLink);
+        
+        // 立即同步点击唤起第三方浏览器 App
+        schemeLink.click();
+        setTimeout(() => {
+          if (document.body.contains(schemeLink)) document.body.removeChild(schemeLink);
+        }, 500);
+
+        // 智能安全兜底：若手机未安装该浏览器或协议被系统静默拦截，1.2秒后自动回退为默认网页打开
+        const startTime = Date.now();
+        setTimeout(() => {
+          if (document.visibilityState === 'visible' && (Date.now() - startTime < 1600)) {
+            openStandardUrl(targetUrl);
+          }
+        }, 1200);
+      } else {
+        // 手机默认浏览器方式：直接无缝新窗口打开
+        openStandardUrl(targetUrl);
+      }
     }
 
     // ==========================================
