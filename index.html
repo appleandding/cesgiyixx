@@ -5848,10 +5848,27 @@
       });
     }
 
-    // 通用二进制 Blob 安全下载驱动 (强制二进制流，点击立即触发系统自动下载)
+    // 依据文件名自动获取安卓/iOS系统严格认可的合法 MIME 类型
+    function getFileMimeType(fileName) {
+      const ext = fileName.slice(fileName.lastIndexOf('.')).toLowerCase();
+      const mimeMap = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+        '.json': 'application/json',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.txt': 'text/plain;charset=utf-8',
+        '.html': 'text/html;charset=utf-8',
+        '.zip': 'application/zip'
+      };
+      return mimeMap[ext] || 'application/octet-stream';
+    }
+
+    // 通用二进制 Blob 安全下载驱动 (精准匹配图片与文档格式，防止安卓系统媒体库拦截)
     function downloadBlobFile(blob, fileName) {
-      // 统一封装为 application/octet-stream，强制 iOS Safari 与各大安卓浏览器唤起自动下载通道
-      const downloadBlob = new Blob([blob], { type: 'application/octet-stream' });
+      const mime = getFileMimeType(fileName);
+      const downloadBlob = new Blob([blob], { type: mime });
       const blobUrl = URL.createObjectURL(downloadBlob);
       const a = document.createElement('a');
       a.style.display = 'none';
@@ -5859,7 +5876,6 @@
       a.download = fileName;
       document.body.appendChild(a);
       
-      // 同步立即触发点击，绝不走异步，彻底杜绝浏览器拦截
       a.click();
 
       setTimeout(() => {
@@ -5868,8 +5884,8 @@
       }, 3000);
     }
 
-    // Base64 高速切片转换为 Blob 实体 (支持大体积酒馆卡与原图秒解)
-    function base64ToBlob(base64Data, defaultType = 'application/octet-stream') {
+    // Base64 高速切片转换为 Blob 实体 (支持指定类型)
+    function base64ToBlob(base64Data, defaultType = 'image/png') {
       try {
         let b64 = base64Data;
         let contentType = defaultType;
@@ -5897,7 +5913,7 @@
       }
     }
 
-    // 单文件导出驱动 (酒馆卡 PNG/JSON、DOCX、TXT 等点击立即自动下载)
+    // 单文件导出驱动 (酒馆卡 PNG/JSON、DOCX、TXT 点击自动正常下载)
     function downloadRawFileItem(item) {
       if (!item.rawBase64Url) {
         alert('未找到原文件镜像数据');
@@ -5905,16 +5921,17 @@
       }
       const ext = item.ext || '';
       const fullName = item.name.endsWith(ext) ? item.name : `${item.name}${ext}`;
+      const correctMime = getFileMimeType(fullName);
       
-      // 1. 优先尝试纯同步 Blob 流式自动下载 (iOS/安卓均会直接触发下载)
-      const blob = base64ToBlob(item.rawBase64Url);
+      // 1. 采用精准 MIME 类型进行 Blob 转换与下载 (解决安卓 MediaStore 报错)
+      const blob = base64ToBlob(item.rawBase64Url, correctMime);
       if (blob) {
         downloadBlobFile(blob, fullName);
         showToast('已开始下载：' + fullName);
         return;
       }
 
-      // 2. 兜底直接触发 DataURL 下载
+      // 2. 兜底直接触发下载
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = item.rawBase64Url;
